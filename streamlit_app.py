@@ -38,7 +38,7 @@ else:
         initial_sidebar_state="expanded"
     )
 
-    # Custom CSS
+    # Custom CSS - Updated 
     st.markdown("""
     <style>
         .main-header {
@@ -238,6 +238,10 @@ else:
         # Prepare data for radar chart (excluding AUC if it has N/A values)
         radar_data = results_df.copy()
         metrics_to_plot = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
+        
+        # Add MCC if available
+        if 'MCC' in radar_data.columns:
+            metrics_to_plot.append('MCC')
         
         # Check if AUC Score is available and numeric
         if 'AUC Score' in radar_data.columns:
