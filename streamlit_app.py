@@ -9,7 +9,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score, matthews_corrcoef
 from sklearn.datasets import load_breast_cancer
 
 
-st.set_page_config(page_title="ML classification models", layout="centered")
+st.set_page_config(page_title="Machine Learning classification models", layout="centered")
 
 
 def load_models():
@@ -288,28 +288,19 @@ def main():
             else:
                 detected = test_df.columns[-1]
 
-        # show detected column and its unique values for guidance
+       
         st.markdown(f"**Detected target column:** {detected}")
-        try:
-            uniques = test_df[detected].dropna().unique()
-            st.markdown(f"**Unique values (preview):** {list(uniques)[:10]}")
-        except Exception:
-            st.markdown("**Unique values (preview):** could not determine")
+       
+        target_col = st.selectbox("Select target column", options=list(test_df.columns), index=list(test_df.columns).index(detected) if detected in test_df.columns else 0)
 
-        # if multi-class, offer a conversion to binary
+       
         try:
-            u = test_df[detected].dropna().unique()
-            if len(u) > 2:
-                if st.checkbox('Convert multi-class target to binary (0 = no disease, 1 = disease)', value=True):
-                    try:
-                        test_df[detected] = (pd.to_numeric(test_df[detected], errors='coerce') > 0).astype(int)
-                        st.success('Converted target to binary')
-                    except Exception:
-                        st.error('Failed to convert target to binary')
+            if target_col in test_df.columns:
+                _u = test_df[target_col].dropna().unique()
+                if len(_u) > 2:
+                    test_df[target_col] = (pd.to_numeric(test_df[target_col], errors='coerce') > 0).astype(int)
         except Exception:
             pass
-
-        target_col = st.selectbox("Select target column", options=list(test_df.columns), index=list(test_df.columns).index(detected) if detected in test_df.columns else 0)
         
     else:
         test_df = load_default_dataset()
