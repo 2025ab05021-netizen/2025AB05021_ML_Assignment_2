@@ -100,7 +100,34 @@ def main():
     uploaded = st.file_uploader("Upload CSV test dataset.", type=['csv'])
     if uploaded is not None:
         try:
-            test_df = pd.read_csv(uploaded)
+            # try default CSV parsing first
+            try:
+                test_df = pd.read_csv(uploaded)
+            except Exception:
+                # fallback: try to let pandas infer the separator (engine='python')
+                try:
+                    uploaded.seek(0)
+                except Exception:
+                    pass
+                test_df = pd.read_csv(uploaded, sep=None, engine='python')
+
+            # If the file parsed into a single column, try common alternatives
+            if test_df.shape[1] == 1:
+                try:
+                    uploaded.seek(0)
+                except Exception:
+                    pass
+                # try tab-separated
+                try:
+                    test_df = pd.read_csv(uploaded, sep='\t')
+                except Exception:
+                    try:
+                        uploaded.seek(0)
+                    except Exception:
+                        pass
+                    # try whitespace-delimited
+                    test_df = pd.read_csv(uploaded, delim_whitespace=True)
+
             st.success(f"Loaded {len(test_df)} rows")
         except Exception as e:
             st.error(f"Error reading file: {e}")
