@@ -328,30 +328,87 @@ def main():
     sel_key = available[display.index(sel)]
     model = models[sel_key]
 
-    # 3) Display evaluation metrics (precomputed if available)
+    # 3) Display evaluation metrics (live calculated)
     st.header('Evaluation Metrics')
-    if results_df is not None:
-        # Use proper CSV pattern matching
-        csv_pattern = name_mapping.get(sel_key, {}).get('csv_pattern', sel_key.replace('_',' ').title())
-        row = results_df[results_df['Model'].str.contains(csv_pattern, case=False, na=False)]
-        if len(row) > 0:
-            r = row.iloc[0]
-            st.success(f"📊 Showing metrics for **{r['Model']}**")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric('Accuracy', f"{r.get('Accuracy',0):.4f}")
-                st.metric('Precision', f"{r.get('Precision',0):.4f}")
-            with c2:
-                st.metric('Recall', f"{r.get('Recall',0):.4f}")
-                st.metric('F1 Score', f"{r.get('F1 Score',0):.4f}")
-            with c3:
-                st.metric('AUC', f"{r.get('AUC Score','N/A')}")
-                st.metric('MCC', f"{r.get('MCC','N/A')}")
+    
+    # Calculate live metrics for current dataset
+    try:
+        X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler)
+        if X_test is not None:
+            # Align features with model expectations
+            X_aligned, alignment_msg, can_predict = align_features(X_test, model, metadata, 'pad_truncate')
+            
+            if can_predict:
+                # Make prediction
+                y_pred = model.predict(X_aligned)
+                
+                # Prepare labels for binary classification
+                y_true = pd.Series(y_test).reset_index(drop=True)
+                y_pred_s = pd.Series(y_pred).reset_index(drop=True)
+                
+                # Convert to binary if needed
+                if y_true.nunique() > 2:
+                    top = sorted(y_true.unique())[-1]
+                    y_true_bin = (y_true == top).astype(int)
+                    y_pred_bin = (y_pred_s == top).astype(int)
+                else:
+                    y_true_bin = y_true.astype(int)
+                    y_pred_bin = y_pred_s.astype(int)
+                
+                # Calculate all metrics
+                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+                
+                live_accuracy = accuracy_score(y_true_bin, y_pred_bin)
+                live_precision = precision_score(y_true_bin, y_pred_bin, average='binary', zero_division=0)
+                live_recall = recall_score(y_true_bin, y_pred_bin, average='binary', zero_division=0)
+                live_f1 = f1_score(y_true_bin, y_pred_bin, average='binary', zero_division=0)
+                
+                # Calculate AUC
+                live_auc = 'N/A'
+                try:
+                    if hasattr(model, 'predict_proba'):
+                        probs = model.predict_proba(X_aligned)[:,1]
+                    elif hasattr(model, 'decision_function'):
+                        probs = model.decision_function(X_aligned)
+                    else:
+                        probs = None
+                    if probs is not None and len(set(y_true_bin))==2:
+                        live_auc = roc_auc_score(y_true_bin, probs)
+                except Exception:
+                    live_auc = 'N/A'
+                    
+                # Calculate MCC
+                live_mcc = 'N/A'
+                try:
+                    live_mcc = matthews_corrcoef(y_true_bin, y_pred_bin)
+                except Exception:
+                    live_mcc = 'N/A'
+                
+                # Display metrics
+                dataset_type = "Default Dataset" if uploaded is None else "Uploaded Dataset"
+                st.success(f"📊 Live Evaluation Metrics ({dataset_type})")
+                
+                if "Perfect match" not in alignment_msg:
+                    st.info(f"🔄 {alignment_msg}")
+                
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric('Accuracy', f"{live_accuracy:.4f}")
+                    st.metric('Precision', f"{live_precision:.4f}")
+                with c2:
+                    st.metric('Recall', f"{live_recall:.4f}")
+                    st.metric('F1 Score', f"{live_f1:.4f}")
+                with c3:
+                    auc_display = f"{live_auc:.4f}" if live_auc != 'N/A' else 'N/A'
+                    mcc_display = f"{live_mcc:.4f}" if live_mcc != 'N/A' else 'N/A'
+                    st.metric('AUC', auc_display)
+                    st.metric('MCC', mcc_display)
+            else:
+                st.error(f"❌ Cannot calculate metrics: {alignment_msg}")
         else:
-            st.warning(f'No precomputed metrics found for **{csv_pattern}**')
-            st.info('Metrics will be computed live during evaluation below.')
-    else:
-        st.info('No model_results.csv found')
+            st.warning('Could not prepare data for evaluation')
+    except Exception as e:
+        st.error(f'Error calculating metrics: {e}')
 
     # 4) Confusion matrix + classification report (live)
     st.header('Confusion Matrix & Classification Report')
@@ -366,14 +423,10 @@ def main():
         X_aligned, alignment_msg, can_predict = align_features(X_test, model, metadata, 'pad_truncate')
         
         if can_predict:
-            if "Perfect match" not in alignment_msg:
-                st.info(f"🔄 {alignment_msg}")
-            
             # Make prediction
             y_pred = model.predict(X_aligned)
         else:
             st.error(f"❌ Cannot proceed with prediction: {alignment_msg}")
-            st.info("💡 **Try**: Change the feature alignment strategy or upload a different dataset.")
             return
             
         # prepare labels
