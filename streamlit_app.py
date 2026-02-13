@@ -76,9 +76,29 @@ def prepare_data_for_prediction(df, target_col, scaler):
             X = scaler.transform(X)
         else:
             X = X.values
-    except Exception:
+    except Exception as e:
+        # If scaling fails, return as numpy array but preserve shape info
         X = X.values
     return X, y
+
+def validate_features(X, model, metadata=None):
+    """Validate feature count matches model expectations"""
+    if X is None:
+        return False, "No data provided"
+    
+    n_features = X.shape[1] if hasattr(X, 'shape') else len(X[0]) if X else 0
+    
+    # Try to get expected features from model
+    expected_features = None
+    if hasattr(model, 'n_features_in_'):
+        expected_features = model.n_features_in_
+    elif metadata and 'n_features' in metadata:
+        expected_features = metadata['n_features']
+    
+    if expected_features is not None and n_features != expected_features:
+        return False, f"Feature mismatch: Your data has {n_features} features, but the model expects {expected_features} features."
+    
+    return True, "Features validated successfully"
 
 
 def load_default_dataset():
@@ -92,6 +112,21 @@ def main():
     st.title("ML classification models")
     st.markdown("""This web app evaluates multiple trained classification models; upload test data, choose a model, and view metrics, reports, and confusion matrices.""")
     st.markdown("- Upload a CSV test dataset\n- Select a trained model from a dropdown\n- View evaluation metrics (Accuracy, Precision, Recall, F1, AUC, MCC if available)\n- See Confusion Matrix and Classification Report")
+    
+    # Add dataset requirements info
+    with st.expander("📋 Dataset Requirements", expanded=False):
+        st.markdown("""
+        **Important**: The models were trained on the **Breast Cancer Wisconsin dataset** with **30 features**.
+        
+        Your uploaded CSV should have:
+        - **30 features** (same as training data)
+        - Feature names matching the breast cancer dataset
+        - A target column named 'target' or similar
+        
+        **Features expected**: mean radius, mean texture, mean perimeter, mean area, mean smoothness, mean compactness, mean concavity, mean concave points, mean symmetry, mean fractal dimension, radius error, texture error, perimeter error, area error, smoothness error, compactness error, concavity error, concave points error, symmetry error, fractal dimension error, worst radius, worst texture, worst perimeter, worst area, worst smoothness, worst compactness, worst concavity, worst concave points, worst symmetry, worst fractal dimension.
+        
+        💡 **Tip**: Use the default dataset (loads automatically) or check the sample_test_data.csv for the correct format.
+        """)
 
     models, scaler, metadata = load_models()
     results_df = load_model_results()
@@ -208,6 +243,27 @@ def main():
         if X_test is None:
             st.warning('Could not prepare test data')
             return
+        
+        # Validate features before prediction
+        is_valid, validation_msg = validate_features(X_test, model, metadata)
+        if not is_valid:
+            st.error(f"❌ {validation_msg}")
+            st.info("💡 **Solution**: Please ensure your dataset has the same features as the training data. The models were trained on the Breast Cancer Wisconsin dataset with 30 features.")
+            
+            # Show expected vs actual features
+            expected_features = getattr(model, 'n_features_in_', 'Unknown')
+            actual_features = X_test.shape[1] if hasattr(X_test, 'shape') else 'Unknown'
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Expected Features", expected_features)
+            with col2:
+                st.metric("Your Data Features", actual_features)
+                
+            st.info("Use the default dataset (breast cancer) or upload a CSV with the same 30 features as the training data.")
+            return
+            
+        st.success(f"✅ Feature validation passed: {X_test.shape[1]} features")
         y_pred = model.predict(X_test)
         # prepare labels
         y_true = pd.Series(y_test).reset_index(drop=True)
