@@ -132,8 +132,40 @@ def main():
         except Exception as e:
             st.error(f"Error reading file: {e}")
             return
-        target_col = auto_detect_target_column(test_df)
-        target_col = st.selectbox("Select target column", options=list(test_df.columns), index=list(test_df.columns).index(target_col) if target_col in test_df.columns else 0)
+        # detect target column and show helpful info
+        detected = auto_detect_target_column(test_df)
+        # normalize column names (strip whitespace)
+        test_df.columns = [c.strip() for c in test_df.columns]
+        # try to ensure detected matches normalized names
+        if detected not in test_df.columns:
+            lower_map = {c.lower(): c for c in test_df.columns}
+            if detected and detected.lower() in lower_map:
+                detected = lower_map[detected.lower()]
+            else:
+                detected = test_df.columns[-1]
+
+        # show detected column and its unique values for guidance
+        st.markdown(f"**Detected target column:** {detected}")
+        try:
+            uniques = test_df[detected].dropna().unique()
+            st.markdown(f"**Unique values (preview):** {list(uniques)[:10]}")
+        except Exception:
+            st.markdown("**Unique values (preview):** could not determine")
+
+        # if multi-class, offer a conversion to binary
+        try:
+            u = test_df[detected].dropna().unique()
+            if len(u) > 2:
+                if st.checkbox('Convert multi-class target to binary (0 = no disease, 1 = disease)', value=True):
+                    try:
+                        test_df[detected] = (pd.to_numeric(test_df[detected], errors='coerce') > 0).astype(int)
+                        st.success('Converted target to binary')
+                    except Exception:
+                        st.error('Failed to convert target to binary')
+        except Exception:
+            pass
+
+        target_col = st.selectbox("Select target column", options=list(test_df.columns), index=list(test_df.columns).index(detected) if detected in test_df.columns else 0)
     else:
         test_df = load_default_dataset()
         target_col = 'target'
