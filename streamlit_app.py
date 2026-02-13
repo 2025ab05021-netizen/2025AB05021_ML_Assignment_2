@@ -5,7 +5,7 @@ import joblib
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, matthews_corrcoef
+from sklearn.metrics import confusion_matrix, roc_auc_score, matthews_corrcoef
 from sklearn.datasets import load_breast_cancer
 
 
@@ -448,9 +448,7 @@ def main():
         ax.set_ylabel('Actual')
         st.pyplot(fig)
 
-        # classification report as plain text
-        cr_text = classification_report(y_true_bin, y_pred_bin)
-        st.text(cr_text)
+        # classification report removed (showing only confusion matrix)
 
     except Exception as e:
         st.error(f'Error during live evaluation: {e}')
