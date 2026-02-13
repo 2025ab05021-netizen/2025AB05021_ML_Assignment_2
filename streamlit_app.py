@@ -365,8 +365,8 @@ def main():
                     live_mcc = 'N/A'
                 
                 # Display metrics
-                dataset_type = "" if uploaded is None else "Uploaded Dataset"
-                st.success(f"📊 Live Evaluation Metrics ({dataset_type})")
+                dataset_type = "" if uploaded is None else " - Uploaded Dataset"
+                st.success(f"📊 Live Evaluation Metrics {dataset_type}")
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
