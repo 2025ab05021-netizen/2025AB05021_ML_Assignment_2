@@ -62,7 +62,7 @@ def prepare_data_for_prediction(df, target_col, scaler):
         y = None
         X = dfc
     
-    # Enhanced data preprocessing
+    #  Data preprocessing
     for col in X.columns:
         if X[col].dtype == object:
             # Try to convert to numeric first
@@ -73,7 +73,7 @@ def prepare_data_for_prediction(df, target_col, scaler):
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
     
-    # Handle missing values more intelligently
+    # Handle missing values
     numeric_cols = X.select_dtypes(include=[np.number]).columns
     if len(numeric_cols) > 0:
         X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].mean())
@@ -81,14 +81,12 @@ def prepare_data_for_prediction(df, target_col, scaler):
     # Convert to numpy array
     X_values = X.values
     
-    # Apply scaling if available (with error handling)
+    # Apply scaling if available
     try:
         if scaler is not None:
             X_values = scaler.transform(X_values)
     except Exception as e:
-        # If scaling fails due to feature mismatch, try to handle it gracefully
         try:
-            # If scaler expects different number of features, we'll handle this in align_features
             pass
         except Exception:
             pass
@@ -105,7 +103,7 @@ def validate_dataset_requirements(df, target_col):
     issues = []
     warnings = []
     
-    # Get feature count (excluding target)
+    # Get feature count
     if target_col in df.columns:
         n_features = len(df.columns) - 1
         X = df.drop(columns=[target_col])
@@ -190,7 +188,6 @@ def align_features(X, model, metadata=None, strategy='pad_truncate'):
     
     n_features = X.shape[1] if hasattr(X, 'shape') else len(X[0]) if X else 0
     
-    # Try to get expected features from model
     expected_features = None
     if hasattr(model, 'n_features_in_'):
         expected_features = model.n_features_in_
@@ -206,12 +203,10 @@ def align_features(X, model, metadata=None, strategy='pad_truncate'):
     # Handle feature mismatch based on strategy
     if strategy == 'pad_truncate':
         if n_features < expected_features:
-            # Pad with zeros
             padding = np.zeros((X.shape[0], expected_features - n_features))
             X_aligned = np.hstack([X, padding])
             message = f"Added {expected_features - n_features} zero-padding features ({n_features} → {expected_features})"
         else:
-            # Truncate extra features
             X_aligned = X[:, :expected_features]
             message = f"Truncated {n_features - expected_features} extra features ({n_features} → {expected_features})"
         return X_aligned, message, True
@@ -247,20 +242,17 @@ def main():
             try:
                 test_df = pd.read_csv(uploaded)
             except Exception:
-                # fallback: try to let pandas infer the separator (engine='python')
                 try:
                     uploaded.seek(0)
                 except Exception:
                     pass
                 test_df = pd.read_csv(uploaded, sep=None, engine='python')
 
-            # If the file parsed into a single column, try common alternatives
             if test_df.shape[1] == 1:
                 try:
                     uploaded.seek(0)
                 except Exception:
                     pass
-                # try tab-separated
                 try:
                     test_df = pd.read_csv(uploaded, sep='\t')
                 except Exception:
@@ -268,7 +260,6 @@ def main():
                         uploaded.seek(0)
                     except Exception:
                         pass
-                    # try whitespace-delimited
                     test_df = pd.read_csv(uploaded, delim_whitespace=True)
 
             st.success(f"Loaded {len(test_df)} rows")
@@ -276,11 +267,10 @@ def main():
             st.error(f"Error reading file: {e}")
             return
             
-        # detect target column and show helpful info
+        # detect target column
         detected = auto_detect_target_column(test_df)
         # normalize column names (strip whitespace)
         test_df.columns = [c.strip() for c in test_df.columns]
-        # try to ensure detected matches normalized names
         if detected not in test_df.columns:
             lower_map = {c.lower(): c for c in test_df.columns}
             if detected and detected.lower() in lower_map:
@@ -312,14 +302,13 @@ def main():
         st.error('No trained models found. Place <name>_model.pkl files in the app folder.')
         return
     
-    # Use proper display names
     name_mapping = get_model_display_name_mapping()
     display = [name_mapping.get(k, {}).get('display', k.replace('_',' ').title()) for k in available]
     sel = st.selectbox('Select model', options=display)
     sel_key = available[display.index(sel)]
     model = models[sel_key]
 
-    # 3) Display evaluation metrics (live calculated)
+    # 3) Display evaluation metrics 
     st.header('Evaluation Metrics')
     
     # Calculate live metrics for current dataset
@@ -376,11 +365,8 @@ def main():
                     live_mcc = 'N/A'
                 
                 # Display metrics
-                dataset_type = "Default Dataset" if uploaded is None else "Uploaded Dataset"
+                dataset_type = "" if uploaded is None else "Uploaded Dataset"
                 st.success(f"📊 Live Evaluation Metrics ({dataset_type})")
-                
-                if "Perfect match" not in alignment_msg:
-                    st.info(f"🔄 {alignment_msg}")
                 
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -395,14 +381,14 @@ def main():
                     st.metric('AUC', auc_display)
                     st.metric('MCC', mcc_display)
             else:
-                st.error(f"❌ Cannot calculate metrics: {alignment_msg}")
+                st.error(f" Cannot calculate metrics: {alignment_msg}")
         else:
             st.warning('Could not prepare data for evaluation')
     except Exception as e:
         st.error(f'Error calculating metrics: {e}')
 
-    # 4) Confusion matrix + classification report (live)
-    st.header('Confusion Matrix & Classification Report')
+    # 4) Confusion matrix
+    st.header('Confusion Matrix')
     
     try:
         X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler)
@@ -410,14 +396,13 @@ def main():
             st.warning('Could not prepare test data')
             return
         
-        # Align features with model expectations (default strategy)
         X_aligned, alignment_msg, can_predict = align_features(X_test, model, metadata, 'pad_truncate')
         
         if can_predict:
             # Make prediction
             y_pred = model.predict(X_aligned)
         else:
-            st.error(f"❌ Cannot proceed with prediction: {alignment_msg}")
+            st.error(f"Cannot proceed with prediction: {alignment_msg}")
             return
             
         # prepare labels
@@ -438,8 +423,6 @@ def main():
         ax.set_xlabel('Predicted')
         ax.set_ylabel('Actual')
         st.pyplot(fig)
-
-        # classification report removed (showing only confusion matrix)
 
     except Exception as e:
         st.error(f'Error during live evaluation: {e}')
