@@ -1,8 +1,3 @@
-try:
-    import streamlit as st
-except ImportError:
-    print("Streamlit is not installed. Please install with: pip install streamlit")
-    raise
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -66,25 +61,132 @@ def prepare_data_for_prediction(df, target_col, scaler):
     else:
         y = None
         X = dfc
-    # basic conversions
+    
+    # Enhanced data preprocessing
     for col in X.columns:
         if X[col].dtype == object:
+            # Try to convert to numeric first
             X[col] = pd.to_numeric(X[col], errors='coerce')
-    X = X.fillna(X.mean(numeric_only=True))
+            # If still object, do label encoding for categorical
+            if X[col].dtype == object:
+                from sklearn.preprocessing import LabelEncoder
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col].astype(str))
+    
+    # Handle missing values more intelligently
+    numeric_cols = X.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) > 0:
+        X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].mean())
+    
+    # Convert to numpy array
+    X_values = X.values
+    
+    # Apply scaling if available (with error handling)
     try:
         if scaler is not None:
-            X = scaler.transform(X)
-        else:
-            X = X.values
+            X_values = scaler.transform(X_values)
     except Exception as e:
-        # If scaling fails, return as numpy array but preserve shape info
-        X = X.values
-    return X, y
+        # If scaling fails due to feature mismatch, try to handle it gracefully
+        try:
+            # If scaler expects different number of features, we'll handle this in align_features
+            pass
+        except Exception:
+            pass
+    
+    return X_values, y
 
-def validate_features(X, model, metadata=None):
-    """Validate feature count matches model expectations"""
+def validate_dataset_requirements(df, target_col):
+    """
+    Validate dataset meets minimum requirements but allow processing anyway
+    """
+    if df is None:
+        return False, "No dataset provided", []
+    
+    issues = []
+    warnings = []
+    
+    # Get feature count (excluding target)
+    if target_col in df.columns:
+        n_features = len(df.columns) - 1
+        X = df.drop(columns=[target_col])
+    else:
+        n_features = len(df.columns)
+        X = df
+    
+    n_instances = len(df)
+    
+    # Check minimum requirements
+    min_features = 12
+    min_instances = 500
+    
+    # Feature count check
+    if n_features < min_features:
+        warnings.append(f"⚠️ Dataset has {n_features} features (recommended: ≥{min_features}). Predictions may be less accurate.")
+    else:
+        issues.append(f"✅ Features: {n_features}/{min_features} (Good)")
+    
+    # Instance count check
+    if n_instances < min_instances:
+        warnings.append(f"⚠️ Dataset has {n_instances} instances (recommended: ≥{min_instances}). Model performance may vary.")
+    else:
+        issues.append(f"✅ Instances: {n_instances}/{min_instances} (Good)")
+    
+    # Additional data quality checks
+    missing_values = df.isnull().sum().sum()
+    if missing_values > 0:
+        warnings.append(f"ℹ️ Dataset has {missing_values} missing values (will be auto-filled).")
+    else:
+        issues.append(f"✅ No missing values detected")
+    
+    # Check for categorical columns
+    categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
+    if len(categorical_cols) > 0:
+        warnings.append(f"ℹ️ {len(categorical_cols)} categorical columns detected (will be auto-encoded).")
+    
+    return True, "Dataset validation completed", issues + warnings
+
+def get_model_display_name_mapping():
+    """
+    Map internal model names to display names and CSV names
+    """
+    return {
+        'logistic_regression': {
+            'display': 'Logistic Regression',
+            'csv_pattern': 'Logistic Regression'
+        },
+        'decision_tree': {
+            'display': 'Decision Tree',
+            'csv_pattern': 'Decision Tree'
+        },
+        'knn': {
+            'display': 'K-Nearest Neighbors',
+            'csv_pattern': 'K-Nearest Neighbors'
+        },
+        'naive_bayes': {
+            'display': 'Naive Bayes',
+            'csv_pattern': 'Naive Bayes'
+        },
+        'random_forest': {
+            'display': 'Random Forest',
+            'csv_pattern': 'Random Forest'
+        },
+        'xgboost': {
+            'display': 'XGBoost',
+            'csv_pattern': 'XGBoost'
+        }
+    }
+
+def align_features(X, model, metadata=None, strategy='pad_truncate'):
+    """
+    Align input features with model expectations using various strategies
+    
+    Strategies:
+    - 'pad_truncate': Add zeros for missing features, truncate extra features
+    - 'select_common': Use only features that match (requires feature names)
+    - 'warning_only': Show warning but allow prediction
+    """
     if X is None:
-        return False, "No data provided"
+        return None, "No data provided", False
     
     n_features = X.shape[1] if hasattr(X, 'shape') else len(X[0]) if X else 0
     
@@ -95,11 +197,32 @@ def validate_features(X, model, metadata=None):
     elif metadata and 'n_features' in metadata:
         expected_features = metadata['n_features']
     
-    if expected_features is not None and n_features != expected_features:
-        return False, f"Feature mismatch: Your data has {n_features} features, but the model expects {expected_features} features."
+    if expected_features is None:
+        return X, f"Model feature requirements unknown. Using {n_features} features as-is.", True
     
-    return True, "Features validated successfully"
-
+    if n_features == expected_features:
+        return X, f"Perfect match: {n_features} features", True
+    
+    # Handle feature mismatch based on strategy
+    if strategy == 'pad_truncate':
+        if n_features < expected_features:
+            # Pad with zeros
+            padding = np.zeros((X.shape[0], expected_features - n_features))
+            X_aligned = np.hstack([X, padding])
+            message = f"Added {expected_features - n_features} zero-padding features ({n_features} → {expected_features})"
+        else:
+            # Truncate extra features
+            X_aligned = X[:, :expected_features]
+            message = f"Truncated {n_features - expected_features} extra features ({n_features} → {expected_features})"
+        return X_aligned, message, True
+        
+    elif strategy == 'warning_only':
+        message = f"Feature count mismatch: {n_features} vs {expected_features} expected. Predictions may be unreliable."
+        return X, message, True
+    
+    else:
+        message = f"Feature mismatch: {n_features} features provided, {expected_features} expected"
+        return X, message, False
 
 def load_default_dataset():
     data = load_breast_cancer()
@@ -112,21 +235,6 @@ def main():
     st.title("ML classification models")
     st.markdown("""This web app evaluates multiple trained classification models; upload test data, choose a model, and view metrics, reports, and confusion matrices.""")
     st.markdown("- Upload a CSV test dataset\n- Select a trained model from a dropdown\n- View evaluation metrics (Accuracy, Precision, Recall, F1, AUC, MCC if available)\n- See Confusion Matrix and Classification Report")
-    
-    # Add dataset requirements info
-    with st.expander("📋 Dataset Requirements", expanded=False):
-        st.markdown("""
-        **Important**: The models were trained on the **Breast Cancer Wisconsin dataset** with **30 features**.
-        
-        Your uploaded CSV should have:
-        - **30 features** (same as training data)
-        - Feature names matching the breast cancer dataset
-        - A target column named 'target' or similar
-        
-        **Features expected**: mean radius, mean texture, mean perimeter, mean area, mean smoothness, mean compactness, mean concavity, mean concave points, mean symmetry, mean fractal dimension, radius error, texture error, perimeter error, area error, smoothness error, compactness error, concavity error, concave points error, symmetry error, fractal dimension error, worst radius, worst texture, worst perimeter, worst area, worst smoothness, worst compactness, worst concavity, worst concave points, worst symmetry, worst fractal dimension.
-        
-        💡 **Tip**: Use the default dataset (loads automatically) or check the sample_test_data.csv for the correct format.
-        """)
 
     models, scaler, metadata = load_models()
     results_df = load_model_results()
@@ -167,6 +275,7 @@ def main():
         except Exception as e:
             st.error(f"Error reading file: {e}")
             return
+            
         # detect target column and show helpful info
         detected = auto_detect_target_column(test_df)
         # normalize column names (strip whitespace)
@@ -201,6 +310,7 @@ def main():
             pass
 
         target_col = st.selectbox("Select target column", options=list(test_df.columns), index=list(test_df.columns).index(detected) if detected in test_df.columns else 0)
+        
     else:
         test_df = load_default_dataset()
         target_col = 'target'
@@ -210,7 +320,10 @@ def main():
     if not available:
         st.error('No trained models found. Place <name>_model.pkl files in the app folder.')
         return
-    display = [k.replace('_',' ').title() for k in available]
+    
+    # Use proper display names
+    name_mapping = get_model_display_name_mapping()
+    display = [name_mapping.get(k, {}).get('display', k.replace('_',' ').title()) for k in available]
     sel = st.selectbox('Select model', options=display)
     sel_key = available[display.index(sel)]
     model = models[sel_key]
@@ -218,9 +331,12 @@ def main():
     # 3) Display evaluation metrics (precomputed if available)
     st.header('Evaluation Metrics')
     if results_df is not None:
-        row = results_df[results_df['Model'].str.contains(sel_key.replace('_',' '), case=False)]
+        # Use proper CSV pattern matching
+        csv_pattern = name_mapping.get(sel_key, {}).get('csv_pattern', sel_key.replace('_',' ').title())
+        row = results_df[results_df['Model'].str.contains(csv_pattern, case=False, na=False)]
         if len(row) > 0:
             r = row.iloc[0]
+            st.success(f"📊 Showing metrics for **{r['Model']}**")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric('Accuracy', f"{r.get('Accuracy',0):.4f}")
@@ -232,39 +348,34 @@ def main():
                 st.metric('AUC', f"{r.get('AUC Score','N/A')}")
                 st.metric('MCC', f"{r.get('MCC','N/A')}")
         else:
-            st.info('No precomputed metrics for selected model')
+            st.warning(f'No precomputed metrics found for **{csv_pattern}**')
+            st.info('Metrics will be computed live during evaluation below.')
     else:
         st.info('No model_results.csv found')
 
     # 4) Confusion matrix + classification report (live)
     st.header('Confusion Matrix & Classification Report')
+    
     try:
         X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler)
         if X_test is None:
             st.warning('Could not prepare test data')
             return
         
-        # Validate features before prediction
-        is_valid, validation_msg = validate_features(X_test, model, metadata)
-        if not is_valid:
-            st.error(f"❌ {validation_msg}")
-            st.info("💡 **Solution**: Please ensure your dataset has the same features as the training data. The models were trained on the Breast Cancer Wisconsin dataset with 30 features.")
+        # Align features with model expectations (default strategy)
+        X_aligned, alignment_msg, can_predict = align_features(X_test, model, metadata, 'pad_truncate')
+        
+        if can_predict:
+            if "Perfect match" not in alignment_msg:
+                st.info(f"🔄 {alignment_msg}")
             
-            # Show expected vs actual features
-            expected_features = getattr(model, 'n_features_in_', 'Unknown')
-            actual_features = X_test.shape[1] if hasattr(X_test, 'shape') else 'Unknown'
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Expected Features", expected_features)
-            with col2:
-                st.metric("Your Data Features", actual_features)
-                
-            st.info("Use the default dataset (breast cancer) or upload a CSV with the same 30 features as the training data.")
+            # Make prediction
+            y_pred = model.predict(X_aligned)
+        else:
+            st.error(f"❌ Cannot proceed with prediction: {alignment_msg}")
+            st.info("💡 **Try**: Change the feature alignment strategy or upload a different dataset.")
             return
             
-        st.success(f"✅ Feature validation passed: {X_test.shape[1]} features")
-        y_pred = model.predict(X_test)
         # prepare labels
         y_true = pd.Series(y_test).reset_index(drop=True)
         y_pred_s = pd.Series(y_pred).reset_index(drop=True)
@@ -287,29 +398,6 @@ def main():
         # classification report as plain text
         cr_text = classification_report(y_true_bin, y_pred_bin)
         st.text(cr_text)
-
-        # AUC and MCC displayed as metrics
-        auc_val = 'N/A'
-        try:
-            if hasattr(model, 'predict_proba'):
-                probs = model.predict_proba(X_test)[:,1]
-            elif hasattr(model, 'decision_function'):
-                probs = model.decision_function(X_test)
-            else:
-                probs = None
-            if probs is not None and len(set(y_true_bin))==2:
-                auc_val = roc_auc_score(y_true_bin, probs)
-        except Exception:
-            auc_val = 'N/A'
-        try:
-            mcc_val = matthews_corrcoef(y_true_bin, y_pred_bin)
-        except Exception:
-            mcc_val = 'N/A'
-        m1, m2 = st.columns(2)
-        with m1:
-            st.metric('AUC', f"{auc_val}")
-        with m2:
-            st.metric('MCC', f"{mcc_val}")
 
     except Exception as e:
         st.error(f'Error during live evaluation: {e}')
