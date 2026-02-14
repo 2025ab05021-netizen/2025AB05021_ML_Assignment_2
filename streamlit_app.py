@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_auc_score, matthews_corrcoef
 from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
 
 
 st.set_page_config(page_title="Machine Learning classification models", layout="centered")
@@ -220,10 +221,24 @@ def align_features(X, model, metadata=None, strategy='pad_truncate'):
         return X, message, False
 
 def load_default_dataset():
+    """Load default dataset with same train-test split as training notebook"""
+    from sklearn.model_selection import train_test_split
+    
     data = load_breast_cancer()
     df = pd.DataFrame(data.data, columns=data.feature_names)
     df['target'] = data.target
-    return df
+    
+    # Use same split as training notebook (test_size=0.2, random_state=42)
+    # to ensure metrics match the trained model evaluation
+    X = df.drop('target', axis=1)
+    y = df['target']
+    _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    
+    # Return only the test split (same data used for model evaluation in notebook)
+    test_df = pd.DataFrame(X_test, columns=data.feature_names)
+    test_df['target'] = y_test.values
+    
+    return test_df
 
 
 def main():
@@ -295,6 +310,8 @@ def main():
     else:
         test_df = load_default_dataset()
         target_col = 'target'
+        st.info('ℹ️ Using default Breast Cancer Wisconsin dataset (test split: 114 instances, 80/20 split with random_state=42)')
+
 
     # 2) Model selection
     available = [k for k,v in models.items() if v is not None]
