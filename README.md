@@ -48,14 +48,14 @@ The dataset is well-balanced and contains high-quality features that are highly 
 ## c. Models Used
 
 ### Performance Comparison Table
-================================================================================
-                 Model  Accuracy  AUC Score  Precision  Recall  F1 Score    MCC
-   Logistic Regression    0.9825     0.9954     0.9861  0.9861    0.9861 0.9623
-         Decision Tree    0.9123     0.9157     0.9559  0.9028    0.9286 0.8174
-   K-Nearest Neighbors    0.9561     0.9788     0.9589  0.9722    0.9655 0.9054
-Naive Bayes (Gaussian)    0.9298     0.9868     0.9444  0.9444    0.9444 0.8492
-         Random Forest    0.9561     0.9937     0.9589  0.9722    0.9655 0.9054
-               XGBoost    0.9649     0.9917     0.9474  1.0000    0.9730 0.9258
+| Model | Accuracy | AUC Score | Precision | Recall | F1 Score | MCC |
+|---|---:|---:|---:|---:|---:|---:|
+| Logistic Regression | 0.9825 | 0.9954 | 0.9861 | 0.9861 | 0.9861 | 0.9623 |
+| Decision Tree | 0.9123 | 0.9157 | 0.9559 | 0.9028 | 0.9286 | 0.8174 |
+| K-Nearest Neighbors | 0.9561 | 0.9788 | 0.9589 | 0.9722 | 0.9655 | 0.9054 |
+| Naive Bayes (Gaussian) | 0.9298 | 0.9868 | 0.9444 | 0.9444 | 0.9444 | 0.8492 |
+| Random Forest | 0.9561 | 0.9937 | 0.9589 | 0.9722 | 0.9655 | 0.9054 |
+| XGBoost | 0.9649 | 0.9917 | 0.9474 | 1.0000 | 0.9730 | 0.9258 |
 
 ### Model Performance Observations
 
