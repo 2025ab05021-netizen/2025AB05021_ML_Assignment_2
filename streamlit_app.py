@@ -325,6 +325,15 @@ def main():
     sel = st.selectbox('Select model', options=display)
     sel_key = available[display.index(sel)]
     model = models[sel_key]
+    # Show which model object was loaded and preprocessing decision (debug/helpful info)
+    try:
+        model_type = type(model).__name__ if model is not None else 'None'
+        n_feat = getattr(model, 'n_features_in_', getattr(model, 'n_features', 'N/A'))
+        scaled_models = ['logistic_regression', 'knn', 'naive_bayes']
+        apply_scaler_debug = True if sel_key in scaled_models else False
+        st.caption(f"Model: {sel_key} — {model_type}; expected_features={n_feat}; apply_scaler={apply_scaler_debug}")
+    except Exception:
+        pass
 
     # 3) Display evaluation metrics 
     st.header('Evaluation Metrics')
