@@ -312,7 +312,6 @@ def main():
     else:
         test_df = load_default_dataset()
         target_col = 'target'
-        st.info('ℹ️ Using default Breast Cancer Wisconsin dataset (test split: 114 instances, 80/20 split with random_state=42)')
 
 
     # 2) Model selection
