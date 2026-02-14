@@ -52,7 +52,7 @@ def auto_detect_target_column(df):
     return df.columns[-1]
 
 
-def prepare_data_for_prediction(df, target_col, scaler):
+def prepare_data_for_prediction(df, target_col, scaler=None, apply_scaler=False):
     if df is None:
         return None, None
     dfc = df.copy()
@@ -82,14 +82,12 @@ def prepare_data_for_prediction(df, target_col, scaler):
     # Convert to numpy array
     X_values = X.values
     
-    # Apply scaling if available
-    try:
-        if scaler is not None:
-            X_values = scaler.transform(X_values)
-    except Exception as e:
+    # Apply scaling only if explicitly requested for this model
+    if apply_scaler and scaler is not None:
         try:
-            pass
+            X_values = scaler.transform(X_values)
         except Exception:
+            # If scaling fails, continue with unscaled values
             pass
     
     return X_values, y
@@ -235,8 +233,12 @@ def load_default_dataset():
     _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
     # Return only the test split (same data used for model evaluation in notebook)
-    test_df = pd.DataFrame(X_test, columns=data.feature_names)
-    test_df['target'] = y_test.values
+    # Reset index to ensure proper alignment
+    X_test_reset = X_test.reset_index(drop=True)
+    y_test_reset = y_test.reset_index(drop=True)
+    
+    test_df = pd.DataFrame(X_test_reset, columns=data.feature_names)
+    test_df['target'] = y_test_reset
     
     return test_df
 
@@ -330,7 +332,10 @@ def main():
     
     # Calculate live metrics for current dataset
     try:
-        X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler)
+        # Only apply scaler for models that were trained on scaled data
+        scaled_models = ['logistic_regression', 'knn', 'naive_bayes']
+        apply_scaler = True if sel_key in scaled_models else False
+        X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler, apply_scaler=apply_scaler)
         if X_test is not None:
             # Align features with model expectations
             X_aligned, alignment_msg, can_predict = align_features(X_test, model, metadata, 'pad_truncate')
@@ -408,7 +413,10 @@ def main():
     st.header('Confusion Matrix')
     
     try:
-        X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler)
+        # Match scaler usage with evaluation above
+        scaled_models = ['logistic_regression', 'knn', 'naive_bayes']
+        apply_scaler = True if sel_key in scaled_models else False
+        X_test, y_test = prepare_data_for_prediction(test_df, target_col, scaler, apply_scaler=apply_scaler)
         if X_test is None:
             st.warning('Could not prepare test data')
             return
